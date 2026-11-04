@@ -18,12 +18,13 @@ object OfflineEngine {
     private var conversation: com.google.ai.edge.litertlm.Conversation? = null
     @Volatile private var ready = false
     private var loading = false
+    private var activeModelPath: String? = null
 
     @JvmStatic fun isReady(): Boolean = ready
 
     @JvmStatic fun load(context: Context, modelPath: String, callback: Callback) {
         executor.execute {
-            if (ready && engine?.engineConfig?.modelPath == modelPath) {
+            if (ready && activeModelPath == modelPath) {
                 Handler(context.mainLooper).post { callback.onSuccess("مدل آفلاین آماده است.") }
                 return@execute
             }
@@ -34,10 +35,13 @@ object OfflineEngine {
             loading = true
             ready = false
             try {
-                conversation?.close()
+                val oldConversation = conversation
                 conversation = null
-                engine?.close()
+                try { oldConversation?.close() } catch (_: Throwable) {}
+                val oldEngine = engine
                 engine = null
+                try { oldEngine?.close() } catch (_: Throwable) {}
+                activeModelPath = null
                 val file = File(modelPath)
                 require(file.isFile && file.length() > 100L * 1024L * 1024L) {
                     "فایل مدل ناقص یا پیدا نشد. دوباره دانلودش کن."
@@ -51,14 +55,18 @@ object OfflineEngine {
                 candidate.initialize()
                 engine = candidate
                 conversation = candidate.createConversation()
+                activeModelPath = modelPath
                 ready = true
                 Handler(context.mainLooper).post { callback.onSuccess("مدل آفلاین آماده‌ی گفت‌وگو است.") }
             } catch (t: Throwable) {
                 ready = false
-                try { conversation?.close() } catch (_: Throwable) {}
+                val failedConversation = conversation
                 conversation = null
-                try { engine?.close() } catch (_: Throwable) {}
+                try { failedConversation?.close() } catch (_: Throwable) {}
+                val failedEngine = engine
                 engine = null
+                try { failedEngine?.close() } catch (_: Throwable) {}
+                activeModelPath = null
                 Handler(context.mainLooper).post {
                     callback.onError("اجرای مدل ناموفق بود: ${t.message ?: "خطای ناشناخته"}")
                 }
@@ -75,7 +83,7 @@ object OfflineEngine {
                 return@execute
             }
             try {
-                val answer = conversation!!.sendMessage(prompt)
+                val answer = conversation!!.sendMessage(prompt).toString()
                 Handler(context.mainLooper).post { callback.onSuccess(answer) }
             } catch (t: Throwable) {
                 Handler(context.mainLooper).post {
@@ -88,10 +96,13 @@ object OfflineEngine {
     @JvmStatic fun close() {
         executor.execute {
             ready = false
-            try { conversation?.close() } catch (_: Throwable) {}
+            val oldConversation = conversation
             conversation = null
-            try { engine?.close() } catch (_: Throwable) {}
+            try { oldConversation?.close() } catch (_: Throwable) {}
+            val oldEngine = engine
             engine = null
+            try { oldEngine?.close() } catch (_: Throwable) {}
+            activeModelPath = null
         }
     }
 }
