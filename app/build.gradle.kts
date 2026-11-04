@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -9,7 +10,11 @@ android {
         applicationId = "com.edison.tamirkar"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.0.0-native-preview"
+        versionCode = 4
+        versionName = "2.1.0-offline-engine"
     }
+}
+
+dependencies {
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.18.0")
 }
