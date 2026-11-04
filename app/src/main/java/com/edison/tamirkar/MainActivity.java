@@ -1,6 +1,9 @@
 package com.edison.tamirkar;
 
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.webkit.PermissionRequest;
 import android.os.Build;
 import android.os.Bundle;
 import android.graphics.Color;
@@ -40,6 +43,8 @@ public class MainActivity extends Activity {
     private TextView statusMessage;
     private TextView retryButton;
     private boolean pageLoaded = false;
+    private static final int AUDIO_PERMISSION_REQUEST = 4102;
+    private PermissionRequest pendingAudioRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -114,6 +119,36 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    Uri origin = request.getOrigin();
+                    boolean trustedOrigin = origin != null
+                            && "https".equalsIgnoreCase(origin.getScheme())
+                            && "snappai.co".equalsIgnoreCase(origin.getHost());
+                    boolean audioOnly = request.getResources().length == 1
+                            && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(request.getResources()[0]);
+                    if (!trustedOrigin || !audioOnly) {
+                        request.deny();
+                        return;
+                    }
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                            || checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                            == PackageManager.PERMISSION_GRANTED) {
+                        request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                    } else {
+                        pendingAudioRequest = request;
+                        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},
+                                AUDIO_PERMISSION_REQUEST);
+                    }
+                });
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (pendingAudioRequest == request) pendingAudioRequest = null;
+            }
+
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 if (progressBar != null) progressBar.setProgress(newProgress);
@@ -284,6 +319,20 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == AUDIO_PERMISSION_REQUEST && pendingAudioRequest != null) {
+            PermissionRequest request = pendingAudioRequest;
+            pendingAudioRequest = null;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                request.deny();
+            }
+        }
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle outState) {
         if (webView != null) webView.saveState(outState);
         super.onSaveInstanceState(outState);
@@ -309,6 +358,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (pendingAudioRequest != null) {
+            pendingAudioRequest.deny();
+            pendingAudioRequest = null;
+        }
         if (webView != null) {
             webView.stopLoading();
             webView.loadUrl("about:blank");
