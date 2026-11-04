@@ -1,374 +1,85 @@
 package com.edison.tamirkar;
 
-import android.app.Activity;
-import android.Manifest;
-import android.content.pm.PackageManager;
-import android.webkit.PermissionRequest;
-import android.os.Build;
-import android.os.Bundle;
+import android.app.*;
+import android.os.*;
+import android.content.*;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.view.Gravity;
-import android.view.View;
-import android.view.ViewGroup;
-import android.webkit.SslErrorHandler;
-import android.net.http.SslError;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.content.Intent;
-import android.net.Uri;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.text.InputType;
+import android.view.*;
+import android.widget.*;
+import org.json.*;
+import javax.crypto.*;
+import javax.crypto.spec.GCMParameterSpec;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL =
-            "https://snappai.co/s/6aa6149ff34e2be15933a1830991878f";
-    private static final int NAVY = Color.rgb(10, 17, 34);
-    private static final int PANEL = Color.rgb(20, 31, 55);
-    private static final int CYAN = Color.rgb(67, 220, 218);
-    private static final int WHITE = Color.rgb(244, 248, 255);
-
-    private WebView webView;
-    private FrameLayout root;
-    private LinearLayout statusPanel;
-    private ProgressBar progressBar;
-    private TextView statusTitle;
-    private TextView statusMessage;
-    private TextView retryButton;
-    private boolean pageLoaded = false;
-    private static final int AUDIO_PERMISSION_REQUEST = 4102;
-    private PermissionRequest pendingAudioRequest;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(NAVY);
-        getWindow().setNavigationBarColor(NAVY);
-        getWindow().getDecorView().setSystemUiVisibility(0);
-        buildInterface();
-        if (savedInstanceState == null) {
-            webView.loadUrl(APP_URL);
-        } else if (webView.restoreState(savedInstanceState) == null) {
-            webView.loadUrl(APP_URL);
-        }
-    }
-
-    private void buildInterface() {
-        root = new FrameLayout(this);
-        root.setBackgroundColor(NAVY);
-        setContentView(root);
-
-        webView = new WebView(this);
-        root.addView(webView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setUseWideViewPort(true);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setSupportMultipleWindows(false);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            settings.setSafeBrowsingEnabled(true);
-        }
-
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handleUrl(request.getUrl().toString());
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return handleUrl(url);
-            }
-
-            @Override
-            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                if (!pageLoaded) showLoading();
-            }
-
-            @Override
-            public void onPageFinished(WebView view, String url) {
-                pageLoaded = true;
-                hideStatusPanel();
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request,
-                                        WebResourceError error) {
-                if (request.isForMainFrame()) showError();
-            }
-
-            @Override
-            public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                handler.cancel();
-                showError();
-            }
-        });
-
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(PermissionRequest request) {
-                runOnUiThread(() -> {
-                    Uri origin = request.getOrigin();
-                    boolean trustedOrigin = origin != null
-                            && "https".equalsIgnoreCase(origin.getScheme())
-                            && "snappai.co".equalsIgnoreCase(origin.getHost());
-                    boolean audioOnly = request.getResources().length == 1
-                            && PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(request.getResources()[0]);
-                    if (!trustedOrigin || !audioOnly) {
-                        request.deny();
-                        return;
-                    }
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-                            || checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                            == PackageManager.PERMISSION_GRANTED) {
-                        request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-                    } else {
-                        pendingAudioRequest = request;
-                        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},
-                                AUDIO_PERMISSION_REQUEST);
-                    }
-                });
-            }
-
-            @Override
-            public void onPermissionRequestCanceled(PermissionRequest request) {
-                if (pendingAudioRequest == request) pendingAudioRequest = null;
-            }
-
-            @Override
-            public void onProgressChanged(WebView view, int newProgress) {
-                if (progressBar != null) progressBar.setProgress(newProgress);
-                if (newProgress >= 100 && pageLoaded) hideStatusPanel();
-            }
-        });
-        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
-
-        buildStatusPanel();
-        showLoading();
-    }
-
-    private void buildStatusPanel() {
-        statusPanel = new LinearLayout(this);
-        statusPanel.setOrientation(LinearLayout.VERTICAL);
-        statusPanel.setGravity(Gravity.CENTER);
-        statusPanel.setPadding(dp(30), dp(34), dp(30), dp(34));
-        statusPanel.setBackgroundColor(NAVY);
-
-        LinearLayout logo = new LinearLayout(this);
-        logo.setGravity(Gravity.CENTER);
-        GradientDrawable logoBg = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(29, 199, 207), Color.rgb(95, 91, 232)});
-        logoBg.setShape(GradientDrawable.OVAL);
-        logo.setBackground(logoBg);
-        TextView logoText = new TextView(this);
-        logoText.setText("م");
-        logoText.setTextColor(Color.WHITE);
-        logoText.setTextSize(42);
-        logoText.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        logoText.setGravity(Gravity.CENTER);
-        logo.addView(logoText, new LinearLayout.LayoutParams(dp(92), dp(92)));
-        statusPanel.addView(logo);
-
-        TextView brand = new TextView(this);
-        brand.setText("دستیار اس ممد");
-        brand.setTextColor(WHITE);
-        brand.setTextSize(27);
-        brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        brand.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams brandLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        brandLp.topMargin = dp(22);
-        statusPanel.addView(brand, brandLp);
-
-        TextView tagline = new TextView(this);
-        tagline.setText("همراه هوشمند تو، همیشه آماده");
-        tagline.setTextColor(Color.rgb(166, 184, 211));
-        tagline.setTextSize(14);
-        tagline.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams tagLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tagLp.topMargin = dp(8);
-        statusPanel.addView(tagline, tagLp);
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setGravity(Gravity.CENTER);
-        card.setPadding(dp(22), dp(20), dp(22), dp(20));
-        GradientDrawable cardBg = new GradientDrawable();
-        cardBg.setColor(PANEL);
-        cardBg.setCornerRadius(dp(20));
-        card.setBackground(cardBg);
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.topMargin = dp(34);
-        statusPanel.addView(card, cardLp);
-
-        statusTitle = new TextView(this);
-        statusTitle.setText("در حال آماده‌سازی دستیار...");
-        statusTitle.setTextColor(WHITE);
-        statusTitle.setTextSize(16);
-        statusTitle.setGravity(Gravity.CENTER);
-        statusTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        card.addView(statusTitle);
-
-        statusMessage = new TextView(this);
-        statusMessage.setText("لطفاً چند لحظه صبر کن");
-        statusMessage.setTextColor(Color.rgb(166, 184, 211));
-        statusMessage.setTextSize(13);
-        statusMessage.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        msgLp.topMargin = dp(8);
-        card.addView(statusMessage, msgLp);
-
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progressBar.setMax(100);
-        progressBar.setProgress(12);
-        progressBar.setProgressTintList(android.content.res.ColorStateList.valueOf(CYAN));
-        progressBar.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(CYAN));
-        LinearLayout.LayoutParams progressLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(5));
-        progressLp.topMargin = dp(22);
-        card.addView(progressBar, progressLp);
-
-        retryButton = new TextView(this);
-        retryButton.setText("تلاش دوباره");
-        retryButton.setTextColor(NAVY);
-        retryButton.setTextSize(15);
-        retryButton.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        retryButton.setGravity(Gravity.CENTER);
-        retryButton.setPadding(dp(24), dp(12), dp(24), dp(12));
-        GradientDrawable buttonBg = new GradientDrawable();
-        buttonBg.setColor(CYAN);
-        buttonBg.setCornerRadius(dp(14));
-        retryButton.setBackground(buttonBg);
-        retryButton.setVisibility(View.GONE);
-        retryButton.setOnClickListener(v -> {
-            pageLoaded = false;
-            showLoading();
-            webView.loadUrl(APP_URL);
-        });
-        LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        retryLp.topMargin = dp(18);
-        statusPanel.addView(retryButton, retryLp);
-
-        TextView footer = new TextView(this);
-        footer.setText("توسعه و ساخت: مهندس رعیتی");
-        footer.setTextColor(Color.rgb(111, 132, 165));
-        footer.setTextSize(11);
-        footer.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        footerLp.topMargin = dp(28);
-        statusPanel.addView(footer, footerLp);
-
-        root.addView(statusPanel, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    }
-
-    private void showLoading() {
-        statusTitle.setText("در حال اتصال به دستیار...");
-        statusMessage.setText("لطفاً چند لحظه صبر کن");
-        progressBar.setVisibility(View.VISIBLE);
-        retryButton.setVisibility(View.GONE);
-        statusPanel.setVisibility(View.VISIBLE);
-    }
-
-    private void showError() {
-        statusTitle.setText("اتصال برقرار نشد");
-        statusMessage.setText("اینترنت را بررسی کن و دوباره تلاش کن.");
-        progressBar.setVisibility(View.GONE);
-        retryButton.setVisibility(View.VISIBLE);
-        statusPanel.setVisibility(View.VISIBLE);
-    }
-
-    private void hideStatusPanel() {
-        if (statusPanel != null) statusPanel.setVisibility(View.GONE);
-    }
-
-    private boolean handleUrl(String url) {
-        Uri uri = Uri.parse(url);
-        String scheme = uri.getScheme();
-        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-            return false;
-        }
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, uri));
-        } catch (Exception ignored) { }
-        return true;
-    }
-
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == AUDIO_PERMISSION_REQUEST && pendingAudioRequest != null) {
-            PermissionRequest request = pendingAudioRequest;
-            pendingAudioRequest = null;
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-            } else {
-                request.deny();
-            }
-        }
-    }
-
-    @Override
-    protected void onSaveInstanceState(Bundle outState) {
-        if (webView != null) webView.saveState(outState);
-        super.onSaveInstanceState(outState);
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
-    }
-
-    @Override
-    protected void onPause() {
-        if (webView != null) webView.onPause();
-        super.onPause();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (webView != null) webView.onResume();
-    }
-
-    @Override
-    protected void onDestroy() {
-        if (pendingAudioRequest != null) {
-            pendingAudioRequest.deny();
-            pendingAudioRequest = null;
-        }
-        if (webView != null) {
-            webView.stopLoading();
-            webView.loadUrl("about:blank");
-            webView.removeAllViews();
-            webView.destroy();
-            webView = null;
-        }
-        super.onDestroy();
-    }
+  private final int bg=Color.rgb(11,18,34), panel=Color.rgb(23,34,56), cyan=Color.rgb(62,218,216), white=Color.WHITE;
+  private LinearLayout root, messages;
+  private EditText input;
+  private TextView status;
+  private String mode="online";
+  private static final String PREF="secure_config", KEY_ALIAS="dastiar_master_key";
+  @Override public void onCreate(Bundle b){super.onCreate(b); getWindow().setStatusBarColor(bg);getWindow().setNavigationBarColor(bg);showHome();}
+  int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
+  GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
+  TextView label(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setGravity(Gravity.CENTER_VERTICAL);return t;}
+  void showHome(){
+    root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(16),dp(12),dp(16),dp(10));root.setBackgroundColor(bg);setContentView(root);
+    TextView title=label("دستیار اس ممد",24,white);title.setTypeface(null,Typeface.BOLD);title.setGravity(Gravity.CENTER);root.addView(title,new LinearLayout.LayoutParams(-1,dp(54)));
+    TextView sub=label("دستیار هوشمند مستقل",13,0xffaabbd2);sub.setGravity(Gravity.CENTER);root.addView(sub,new LinearLayout.LayoutParams(-1,dp(25)));
+    LinearLayout modes=new LinearLayout(this);modes.setOrientation(0);modes.setPadding(0,dp(12),0,dp(10));root.addView(modes);
+    Button online=button("آنلاین");Button offline=button("آفلاین");modes.addView(online,new LinearLayout.LayoutParams(0,dp(46),1));modes.addView(offline,new LinearLayout.LayoutParams(0,dp(46),1));
+    status=label("آنلاین: اتصال از طریق OpenRouter",12,0xff91a7c5);root.addView(status,new LinearLayout.LayoutParams(-1,dp(30)));
+    ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,0,1);root.addView(scroll,sp);
+    messages=new LinearLayout(this);messages.setOrientation(1);messages.setPadding(0,dp(8),0,dp(8));scroll.addView(messages);
+    addMessage("سلام! من دستیار اس ممد هستم. حالت آنلاین یا آفلاین را انتخاب کن.",false);
+    LinearLayout composer=new LinearLayout(this);composer.setGravity(Gravity.CENTER_VERTICAL);composer.setPadding(0,dp(8),0,0);root.addView(composer);
+    input=new EditText(this);input.setSingleLine(false);input.setMinLines(1);input.setMaxLines(3);input.setTextColor(white);input.setHintTextColor(0xff8193ad);input.setHint("پیامت را بنویس...");input.setPadding(dp(12),dp(8),dp(12),dp(8));input.setBackground(shape(panel,14));composer.addView(input,new LinearLayout.LayoutParams(0,dp(52),1));
+    Button send=button("ارسال");LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(dp(82),dp(52));bp.leftMargin=dp(8);composer.addView(send,bp);
+    online.setOnClickListener(v->{mode="online";status.setText("آنلاین: اتصال از طریق OpenRouter");addMessage("حالت آنلاین انتخاب شد.",false);});
+    offline.setOnClickListener(v->{mode="offline";status.setText("آفلاین: موتور مدل محلی هنوز در مرحله اتصال است");new AlertDialog.Builder(this).setTitle("حالت آفلاین").setMessage("در این نسخه، مدیریت و اجرای مدل محلی هنوز تکمیل نشده است. برای پاسخ آفلاین باید مدل سازگار دانلود و موتور LiteRT-LM به برنامه متصل شود.").setPositiveButton("متوجه شدم",null).show();});
+    send.setOnClickListener(v->{String q=input.getText().toString().trim();if(q.isEmpty())return;input.setText("");addMessage(q,true);if(mode.equals("offline")){addMessage("موتور پاسخ‌گویی آفلاین هنوز در این نسخه فعال نشده است. برای پاسخ، حالت آنلاین را انتخاب کن.",false);}else sendOnline(q);});
+    if(getApiKey()==null) new Handler().postDelayed(this::askKey,400);
+  }
+  Button button(String s){Button b=new Button(this);b.setText(s);b.setTextColor(bg);b.setAllCaps(false);b.setBackground(shape(cyan,14));return b;}
+  void addMessage(String s,boolean user){TextView t=label((user?"شما: ":"دستیار: ")+s,15,white);t.setGravity(Gravity.RIGHT);t.setPadding(dp(13),dp(11),dp(13),dp(11));t.setBackground(shape(user?0xff254b63:panel,15));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);messages.addView(t,p);}
+  void askKey(){
+    EditText e=new EditText(this);e.setSingleLine(true);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);e.setHint("کلید OpenRouter");
+    new AlertDialog.Builder(this).setTitle("راه‌اندازی اتصال آنلاین").setMessage("کلید API را فقط یک‌بار وارد کن. کلید در فضای خصوصی برنامه به‌صورت رمزگذاری‌شده ذخیره می‌شود.").setView(e).setPositiveButton("ذخیره", (d,w)->{String k=e.getText().toString().trim();if(!k.isEmpty())try{saveApiKey(k);addMessage("کلید به‌صورت رمزگذاری‌شده ذخیره شد.",false);}catch(Exception ex){addMessage("ذخیره کلید ناموفق بود: "+ex.getMessage(),false);}}).setNegativeButton("بعداً",null).show();
+  }
+  SecretKey getOrCreateKey() throws Exception {
+    java.security.KeyStore ks=java.security.KeyStore.getInstance("AndroidKeyStore");ks.load(null);
+    if(ks.containsAlias(KEY_ALIAS))return (SecretKey)ks.getKey(KEY_ALIAS,null);
+    KeyGenerator kg=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");
+    kg.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());
+    return kg.generateKey();
+  }
+  void saveApiKey(String key)throws Exception{
+    Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,getOrCreateKey());byte[] iv=c.getIV();byte[] enc=c.doFinal(key.getBytes(StandardCharsets.UTF_8));
+    getSharedPreferences(PREF,0).edit().putString("iv",android.util.Base64.encodeToString(iv,0)).putString("data",android.util.Base64.encodeToString(enc,0)).apply();
+  }
+  String getApiKey(){
+    try{android.content.SharedPreferences p=getSharedPreferences(PREF,0);String ivs=p.getString("iv",null),ds=p.getString("data",null);if(ivs==null||ds==null)return null;Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,getOrCreateKey(),new GCMParameterSpec(128,android.util.Base64.decode(ivs,0)));return new String(c.doFinal(android.util.Base64.decode(ds,0)),StandardCharsets.UTF_8);}catch(Exception e){return null;}
+  }
+  void sendOnline(String prompt){
+    String api=getApiKey();if(api==null){askKey();return;}
+    addMessage("در حال دریافت پاسخ...",false);
+    new Thread(()->{
+      HttpURLConnection con=null;
+      try{
+        URL url=new URL("https://openrouter.ai/api/v1/chat/completions");con=(HttpURLConnection)url.openConnection();con.setRequestMethod("POST");con.setConnectTimeout(25000);con.setReadTimeout(60000);con.setDoOutput(true);con.setRequestProperty("Authorization","Bearer "+api);con.setRequestProperty("Content-Type","application/json");
+        JSONObject body=new JSONObject();body.put("model","openrouter/free");JSONArray arr=new JSONArray();arr.put(new JSONObject().put("role","user").put("content",prompt));body.put("messages",arr);
+        try(OutputStream os=con.getOutputStream()){os.write(body.toString().getBytes(StandardCharsets.UTF_8));}
+        int code=con.getResponseCode();InputStream is=code>=200&&code<300?con.getInputStream():con.getErrorStream();StringBuilder out=new StringBuilder();try(BufferedReader r=new BufferedReader(new InputStreamReader(is,StandardCharsets.UTF_8))){String line;while((line=r.readLine())!=null)out.append(line);}
+        JSONObject json=new JSONObject(out.toString());String answer=code>=200&&code<300?json.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content","پاسخ خالی دریافت شد"): "خطای سرویس ("+code+"): "+json.optString("error",out.toString());
+        runOnUiThread(()->addMessage(answer,false));
+      }catch(Exception ex){runOnUiThread(()->addMessage("خطا در ارتباط: "+ex.getMessage(),false));}finally{if(con!=null)con.disconnect();}
+    }).start();
+  }
 }
