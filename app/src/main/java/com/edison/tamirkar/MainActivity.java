@@ -48,37 +48,46 @@ public class MainActivity extends Activity {
     if(getApiKey()==null) new Handler().postDelayed(this::askKey,400);
   }
 
-  private static final String MODEL_NAME="SmolLM2_135M_Instruct.litertlm";
-  private static final String MODEL_URL="https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/749fc23bc8d7ef89db031d075004289c88f41c2f/SmolLM2_135M_Instruct.litertlm";
-  private java.io.File modelFile(){java.io.File dir=new java.io.File(getFilesDir(),"models");if(!dir.exists())dir.mkdirs();return new java.io.File(dir,MODEL_NAME);}
+  private static final String SMOL_NAME="SmolLM2_135M_Instruct.litertlm";
+  private static final String SMOL_URL="https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/749fc23bc8d7ef89db031d075004289c88f41c2f/SmolLM2_135M_Instruct.litertlm";
+  private static final String QWEN_NAME="Qwen3-0.6B.litertlm";
+  private static final String QWEN_URL="https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm";
+  private java.io.File modelFile(String name){java.io.File dir=new java.io.File(getFilesDir(),"models");if(!dir.exists())dir.mkdirs();return new java.io.File(dir,name);}
   void showModelManager(){
-    java.io.File f=modelFile();
-    String[] actions=f.exists()?new String[]{"اجرای مدل دانلودشده","حذف مدل برای آزادسازی حافظه"}:new String[]{"دانلود مدل سبک آفلاین (حدود ۱۴۳ مگابایت)"};
-    new AlertDialog.Builder(this).setTitle("مدیریت مدل آفلاین").setItems(actions,(d,which)->{
-      if(!f.exists())downloadOfflineModel();
-      else if(which==0)loadOfflineModel();
-      else new AlertDialog.Builder(this).setTitle("حذف مدل").setMessage("فایل مدل از حافظه‌ی برنامه حذف شود؟").setNegativeButton("لغو",null).setPositiveButton("حذف",(a,b)->{if(OfflineEngine.isReady())OfflineEngine.close();boolean ok=f.delete();addMessage(ok?"مدل حذف شد و حافظه آزاد شد.":"حذف فایل انجام نشد.",false);status.setText("آفلاین: مدل دانلود نشده");}).show();
+    String[] choices={"SmolLM2 135M — سبک، حدود ۱۴۳ مگابایت","Qwen3 0.6B — قوی‌تر، حدود ۶۱۴ مگابایت"};
+    new AlertDialog.Builder(this).setTitle("انتخاب مدل آفلاین").setItems(choices,(d,which)->manageModel(which==0?SMOL_NAME:QWEN_NAME,which==0?SMOL_URL:QWEN_URL,which==0?143:614)).setNegativeButton("بستن",null).show();
+  }
+  void manageModel(String name,String url,int sizeMb){
+    java.io.File f=modelFile(name);
+    if(!f.exists()){
+      new AlertDialog.Builder(this).setTitle("دانلود مدل").setMessage("حجم تقریبی: "+sizeMb+" مگابایت\nپس از دانلود، مدل روی خود گوشی اجرا می‌شود.").setNegativeButton("فعلاً نه",null).setPositiveButton("دانلود",(d,w)->downloadOfflineModel(name,url)).show();
+      return;
+    }
+    String[] actions={"اجرای این مدل","حذف مدل برای آزادسازی حافظه"};
+    new AlertDialog.Builder(this).setTitle(name).setItems(actions,(d,which)->{
+      if(which==0)loadOfflineModel(f);
+      else new AlertDialog.Builder(this).setTitle("حذف مدل").setMessage("فایل مدل از حافظه‌ی برنامه حذف شود؟").setNegativeButton("لغو",null).setPositiveButton("حذف",(a,b)->{if(OfflineEngine.isReady())OfflineEngine.close();boolean ok=f.delete();addMessage(ok?"مدل حذف شد و حافظه آزاد شد.":"حذف فایل انجام نشد.",false);status.setText("آفلاین: مدل انتخاب نشده");}).show();
     }).setNegativeButton("بستن",null).show();
   }
-  void downloadOfflineModel(){
-    final android.app.ProgressDialog pd=new android.app.ProgressDialog(this);pd.setTitle("دریافت مدل آفلاین");pd.setMessage("لطفاً تا پایان دانلود صبر کن...");pd.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL);pd.setMax(100);pd.setProgress(0);pd.setCancelable(false);pd.show();
+  void downloadOfflineModel(String name,String url){
+    final android.app.ProgressDialog pd=new android.app.ProgressDialog(this);pd.setTitle("دریافت "+name);pd.setMessage("لطفاً تا پایان دانلود صبر کن...");pd.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL);pd.setMax(100);pd.setProgress(0);pd.setCancelable(false);pd.show();
     new Thread(()->{
-      java.io.File target=modelFile();java.io.File part=new java.io.File(target.getAbsolutePath()+".part");HttpURLConnection con=null;
+      java.io.File target=modelFile(name);java.io.File part=new java.io.File(target.getAbsolutePath()+".part");HttpURLConnection con=null;
       try{
-        URL u=new URL(MODEL_URL);con=(HttpURLConnection)u.openConnection();con.setInstanceFollowRedirects(true);con.setConnectTimeout(20000);con.setReadTimeout(90000);con.setRequestProperty("User-Agent","DastiarAI-Android");int code=con.getResponseCode();if(code<200||code>=300)throw new Exception("خطای دانلود: HTTP "+code);
+        URL u=new URL(url);con=(HttpURLConnection)u.openConnection();con.setInstanceFollowRedirects(true);con.setConnectTimeout(20000);con.setReadTimeout(120000);con.setRequestProperty("User-Agent","DastiarAI-Android");int code=con.getResponseCode();if(code<200||code>=300)throw new Exception("خطای دانلود: HTTP "+code);
         int total=con.getContentLength();long done=0;
         try(InputStream in=con.getInputStream();FileOutputStream out=new FileOutputStream(part)){byte[] buf=new byte[1024*64];int n;while((n=in.read(buf))!=-1){out.write(buf,0,n);done+=n;if(total>0){int p=(int)(done*100/total);runOnUiThread(()->pd.setProgress(p));}}out.getFD().sync();}
         if(done<100L*1024L*1024L)throw new Exception("حجم فایل کمتر از حد انتظار است؛ دانلود کامل نیست.");
         if(target.exists())target.delete();if(!part.renameTo(target))throw new Exception("ذخیره‌ی فایل مدل ناموفق بود.");
-        runOnUiThread(()->{pd.dismiss();addMessage("دانلود مدل کامل شد. اکنون مدل را بارگذاری می‌کنم.",false);loadOfflineModel();});
+        runOnUiThread(()->{pd.dismiss();addMessage("دانلود "+name+" کامل شد. اکنون مدل را بارگذاری می‌کنم.",false);loadOfflineModel(target);});
       }catch(Exception e){part.delete();runOnUiThread(()->{pd.dismiss();new AlertDialog.Builder(this).setTitle("دانلود ناموفق").setMessage(e.getMessage()+"\nاتصال اینترنت را بررسی کن و دوباره تلاش کن.").setPositiveButton("باشه",null).show();});}
       finally{if(con!=null)con.disconnect();}
     }).start();
   }
-  void loadOfflineModel(){
+  void loadOfflineModel(java.io.File file){
     status.setText("آفلاین: در حال بارگذاری مدل...");
     addMessage("در حال آماده‌سازی مدل روی گوشی؛ بار اول ممکن است کمی طول بکشد.",false);
-    OfflineEngine.load(this,modelFile().getAbsolutePath(),new OfflineEngine.Callback(){
+    OfflineEngine.load(this,file.getAbsolutePath(),new OfflineEngine.Callback(){
       public void onSuccess(String message){status.setText("آفلاین: آماده‌ی گفت‌وگو");addMessage(message,false);}
       public void onError(String error){status.setText("آفلاین: بارگذاری ناموفق");addMessage(error,false);}
     });
