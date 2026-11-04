@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
   }
 
   private static final String MODEL_NAME="SmolLM2_135M_Instruct.litertlm";
-  private static final String MODEL_URL="https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/main/SmolLM2_135M_Instruct.litertlm";
+  private static final String MODEL_URL="https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/749fc23bc8d7ef89db031d075004289c88f41c2f/SmolLM2_135M_Instruct.litertlm";
   private java.io.File modelFile(){java.io.File dir=new java.io.File(getFilesDir(),"models");if(!dir.exists())dir.mkdirs();return new java.io.File(dir,MODEL_NAME);}
   void showModelManager(){
     java.io.File f=modelFile();
