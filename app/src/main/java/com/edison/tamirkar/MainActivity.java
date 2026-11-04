@@ -43,10 +43,47 @@ public class MainActivity extends Activity {
     input=new EditText(this);input.setSingleLine(false);input.setMinLines(1);input.setMaxLines(3);input.setTextColor(white);input.setHintTextColor(0xff8193ad);input.setHint("پیامت را بنویس...");input.setPadding(dp(12),dp(8),dp(12),dp(8));input.setBackground(shape(panel,14));composer.addView(input,new LinearLayout.LayoutParams(0,dp(52),1));
     Button send=button("ارسال");LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(dp(82),dp(52));bp.leftMargin=dp(8);composer.addView(send,bp);
     online.setOnClickListener(v->{mode="online";status.setText("آنلاین: اتصال از طریق OpenRouter");addMessage("حالت آنلاین انتخاب شد.",false);});
-    offline.setOnClickListener(v->{mode="offline";status.setText("آفلاین: موتور مدل محلی هنوز در مرحله اتصال است");new AlertDialog.Builder(this).setTitle("حالت آفلاین").setMessage("در این نسخه، مدیریت و اجرای مدل محلی هنوز تکمیل نشده است. برای پاسخ آفلاین باید مدل سازگار دانلود و موتور LiteRT-LM به برنامه متصل شود.").setPositiveButton("متوجه شدم",null).show();});
-    send.setOnClickListener(v->{String q=input.getText().toString().trim();if(q.isEmpty())return;input.setText("");addMessage(q,true);if(mode.equals("offline")){addMessage("موتور پاسخ‌گویی آفلاین هنوز در این نسخه فعال نشده است. برای پاسخ، حالت آنلاین را انتخاب کن.",false);}else sendOnline(q);});
+    offline.setOnClickListener(v->{mode="offline";status.setText("آفلاین: مدل محلی");showModelManager();});
+    send.setOnClickListener(v->{String q=input.getText().toString().trim();if(q.isEmpty())return;input.setText("");addMessage(q,true);if(mode.equals("offline")){if(!OfflineEngine.isReady()){addMessage("ابتدا مدل آفلاین را از مدیریت مدل دانلود و اجرا کن.",false);}else{addMessage("در حال تولید پاسخ آفلاین...",false);OfflineEngine.send(this,q,new OfflineEngine.Callback(){public void onSuccess(String answer){addMessage(answer,false);}public void onError(String error){addMessage(error,false);}});}}else sendOnline(q);});
     if(getApiKey()==null) new Handler().postDelayed(this::askKey,400);
   }
+
+  private static final String MODEL_NAME="SmolLM2_135M_Instruct.litertlm";
+  private static final String MODEL_URL="https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/main/SmolLM2_135M_Instruct.litertlm";
+  private java.io.File modelFile(){java.io.File dir=new java.io.File(getFilesDir(),"models");if(!dir.exists())dir.mkdirs();return new java.io.File(dir,MODEL_NAME);}
+  void showModelManager(){
+    java.io.File f=modelFile();
+    String[] actions=f.exists()?new String[]{"اجرای مدل دانلودشده","حذف مدل برای آزادسازی حافظه"}:new String[]{"دانلود مدل سبک آفلاین (حدود ۱۴۳ مگابایت)"};
+    new AlertDialog.Builder(this).setTitle("مدیریت مدل آفلاین").setItems(actions,(d,which)->{
+      if(!f.exists())downloadOfflineModel();
+      else if(which==0)loadOfflineModel();
+      else new AlertDialog.Builder(this).setTitle("حذف مدل").setMessage("فایل مدل از حافظه‌ی برنامه حذف شود؟").setNegativeButton("لغو",null).setPositiveButton("حذف",(a,b)->{if(OfflineEngine.isReady())OfflineEngine.close();boolean ok=f.delete();addMessage(ok?"مدل حذف شد و حافظه آزاد شد.":"حذف فایل انجام نشد.",false);status.setText("آفلاین: مدل دانلود نشده");}).show();
+    }).setNegativeButton("بستن",null).show();
+  }
+  void downloadOfflineModel(){
+    final android.app.ProgressDialog pd=new android.app.ProgressDialog(this);pd.setTitle("دریافت مدل آفلاین");pd.setMessage("لطفاً تا پایان دانلود صبر کن...");pd.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL);pd.setMax(100);pd.setProgress(0);pd.setCancelable(false);pd.show();
+    new Thread(()->{
+      java.io.File target=modelFile();java.io.File part=new java.io.File(target.getAbsolutePath()+".part");HttpURLConnection con=null;
+      try{
+        URL u=new URL(MODEL_URL);con=(HttpURLConnection)u.openConnection();con.setInstanceFollowRedirects(true);con.setConnectTimeout(20000);con.setReadTimeout(90000);con.setRequestProperty("User-Agent","DastiarAI-Android");int code=con.getResponseCode();if(code<200||code>=300)throw new Exception("خطای دانلود: HTTP "+code);
+        int total=con.getContentLength();long done=0;
+        try(InputStream in=con.getInputStream();FileOutputStream out=new FileOutputStream(part)){byte[] buf=new byte[1024*64];int n;while((n=in.read(buf))!=-1){out.write(buf,0,n);done+=n;if(total>0){int p=(int)(done*100/total);runOnUiThread(()->pd.setProgress(p));}}out.getFD().sync();}
+        if(done<100L*1024L*1024L)throw new Exception("حجم فایل کمتر از حد انتظار است؛ دانلود کامل نیست.");
+        if(target.exists())target.delete();if(!part.renameTo(target))throw new Exception("ذخیره‌ی فایل مدل ناموفق بود.");
+        runOnUiThread(()->{pd.dismiss();addMessage("دانلود مدل کامل شد. اکنون مدل را بارگذاری می‌کنم.",false);loadOfflineModel();});
+      }catch(Exception e){part.delete();runOnUiThread(()->{pd.dismiss();new AlertDialog.Builder(this).setTitle("دانلود ناموفق").setMessage(e.getMessage()+"\nاتصال اینترنت را بررسی کن و دوباره تلاش کن.").setPositiveButton("باشه",null).show();});}
+      finally{if(con!=null)con.disconnect();}
+    }).start();
+  }
+  void loadOfflineModel(){
+    status.setText("آفلاین: در حال بارگذاری مدل...");
+    addMessage("در حال آماده‌سازی مدل روی گوشی؛ بار اول ممکن است کمی طول بکشد.",false);
+    OfflineEngine.load(this,modelFile().getAbsolutePath(),new OfflineEngine.Callback(){
+      public void onSuccess(String message){status.setText("آفلاین: آماده‌ی گفت‌وگو");addMessage(message,false);}
+      public void onError(String error){status.setText("آفلاین: بارگذاری ناموفق");addMessage(error,false);}
+    });
+  }
+
   Button button(String s){Button b=new Button(this);b.setText(s);b.setTextColor(bg);b.setAllCaps(false);b.setBackground(shape(cyan,14));return b;}
   void addMessage(String s,boolean user){TextView t=label((user?"شما: ":"دستیار: ")+s,15,white);t.setGravity(Gravity.RIGHT);t.setPadding(dp(13),dp(11),dp(13),dp(11));t.setBackground(shape(user?0xff254b63:panel,15));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(9);messages.addView(t,p);}
   void askKey(){
