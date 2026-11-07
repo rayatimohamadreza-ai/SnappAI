@@ -1,18 +1,7 @@
-# دستیار هوش مصنوعی (DastiarAI)
+# Palmagine Project
 
-نسخه اندرویدی WebView برای باز کردن پروژه DastiarAI در SnappAI.
+This repository is a React Native project created with Palmagine.
 
-## ساخت APK رایگان
-1. به تب **Actions** مخزن بروید.
-2. گردش کار **Build Edison Android APK** را اجرا کنید یا با push به شاخه main آن را خودکار اجرا کنید.
-3. پس از موفقیت، فایل APK را از بخش **Artifacts** همان اجرا دریافت کنید.
-
-این مخزن در حال حاضر یک پوسته اندرویدی WebView است؛ قابلیت‌های هوش مصنوعی، صدا و تصویر در برنامه وب میزبانی می‌شوند و باید جداگانه در پروژه اصلی بررسی و آزمایش شوند.
-
-## مجوزها و امنیت
-- فقط مجوز اینترنت درخواست می‌شود.
-- دسترسی فایل محلی WebView غیرفعال است.
-- محتوای HTTP ناامن مجاز نیست.
-- مجوزهای میکروفون، دوربین و مخاطبین تا زمان پیاده‌سازی و نیاز واقعی اضافه نشده‌اند.
-
-توسعه و ساخت: مهندس رعیتی
+- `App.tsx` is the entry point of the app
+- Edit it by chatting in the Palmagine app and view it right on your phone
+- You can also edit it with Claude (web/app) via its GitHub integration
